@@ -16,7 +16,6 @@
 var Buffer = require('safe-buffer').Buffer
 var cookie = require('cookie');
 var crypto = require('crypto')
-var debug = require('debug')('express-session');
 var deprecate = require('depd')('express-session');
 var onHeaders = require('on-headers')
 var parseUrl = require('parseurl');
@@ -186,7 +185,6 @@ function session(options) {
     // Handle connection as if there is no session if
     // the store has temporarily disconnected etc
     if (!storeReady) {
-      debug('store is disconnected')
       next()
       return
     }
@@ -219,7 +217,6 @@ function session(options) {
     // set-cookie
     onHeaders(res, function(){
       if (!req.session) {
-        debug('no session');
         return;
       }
 
@@ -229,7 +226,6 @@ function session(options) {
 
       // only send secure cookies via https
       if (req.session.cookie.secure && !issecure(req, trustProxy)) {
-        debug('not secured');
         return;
       }
 
@@ -291,7 +287,6 @@ function session(options) {
           encoding = undefined;
 
           if (chunk.length !== 0) {
-            debug('split response');
             ret = _write.call(res, chunk.slice(0, chunk.length - 1));
             chunk = chunk.slice(chunk.length - 1, chunk.length);
             return ret;
@@ -306,13 +301,11 @@ function session(options) {
 
       if (shouldDestroy(req)) {
         // destroy session
-        debug('destroying');
         store.destroy(req.sessionID, function ondestroy(err) {
           if (err) {
             defer(next, err);
           }
 
-          debug('destroyed');
           writeend();
         });
 
@@ -321,7 +314,6 @@ function session(options) {
 
       // no session to save
       if (!req.session) {
-        debug('no session');
         return _end.call(res, chunk, encoding);
       }
 
@@ -343,13 +335,11 @@ function session(options) {
         return writetop();
       } else if (storeImplementsTouch && shouldTouch(req)) {
         // store implements touch method
-        debug('touching');
         store.touch(req.sessionID, req.session, function ontouch(err) {
           if (err) {
             defer(next, err);
           }
 
-          debug('touched');
           writeend();
         });
 
@@ -396,12 +386,10 @@ function session(options) {
       var _save = sess.save;
 
       function reload(callback) {
-        debug('reloading %s', this.id)
         _reload.call(this, rewrapmethods(this, callback))
       }
 
       function save() {
-        debug('saving %s', this.id);
         savedHash = hash(this);
         _save.apply(this, arguments);
       }
@@ -440,7 +428,6 @@ function session(options) {
     function shouldSave(req) {
       // cannot set cookie without a session ID
       if (typeof req.sessionID !== 'string') {
-        debug('session ignored because of bogus req.sessionID %o', req.sessionID);
         return false;
       }
 
@@ -453,7 +440,6 @@ function session(options) {
     function shouldTouch(req) {
       // cannot set cookie without a session ID
       if (typeof req.sessionID !== 'string') {
-        debug('session ignored because of bogus req.sessionID %o', req.sessionID);
         return false;
       }
 
@@ -474,28 +460,23 @@ function session(options) {
 
     // generate a session if the browser doesn't send a sessionID
     if (!req.sessionID) {
-      debug('no SID sent, generating session');
       generate();
       next();
       return;
     }
 
     // generate the session object
-    debug('fetching %s', req.sessionID);
     store.get(req.sessionID, function(err, sess){
       // error handling
       if (err && err.code !== 'ENOENT') {
-        debug('error %j', err);
         next(err)
         return
       }
 
       try {
         if (err || !sess) {
-          debug('no session found')
           generate()
         } else {
-          debug('session found')
           inflate(req, sess)
         }
       } catch (e) {
@@ -542,11 +523,9 @@ function getcookie(req, name, secrets) {
         val = unsigncookie(raw.slice(2), secrets);
 
         if (val === false) {
-          debug('cookie signature invalid');
           val = undefined;
         }
       } else {
-        debug('cookie unsigned')
       }
     }
   }
@@ -573,11 +552,9 @@ function getcookie(req, name, secrets) {
         }
 
         if (val === false) {
-          debug('cookie signature invalid');
           val = undefined;
         }
       } else {
-        debug('cookie unsigned')
       }
     }
   }
@@ -655,8 +632,6 @@ function issecure(req, trustProxy) {
 function setcookie(res, name, val, secret, options) {
   var signed = 's:' + signature.sign(val, secret);
   var data = cookie.serialize(name, signed, options);
-
-  debug('set-cookie %s', data);
 
   var prev = res.getHeader('Set-Cookie') || []
   var header = Array.isArray(prev) ? prev.concat(data) : [prev, data];
