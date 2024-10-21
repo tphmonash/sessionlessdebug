@@ -2,6 +2,7 @@
 var after = require('after')
 var assert = require('assert')
 var cookieParser = require('cookie-parser')
+var crypto = require('crypto')
 var express = require('express')
 var fs = require('fs')
 var http = require('http')
@@ -1197,6 +1198,50 @@ describe('session()', function(){
       assert.throws(createServer.bind(null, { secret: [] }), /secret option array/);
     })
 
+    it('should sign and unsign with a string', function (done) {
+      var server = createServer({ secret: 'awesome cat' }, function (req, res) {
+        if (!req.session.user) {
+          req.session.user = 'bob'
+          res.end('set')
+        } else {
+          res.end('get:' + JSON.stringify(req.session.user))
+        }
+      })
+
+      request(server)
+        .get('/')
+        .expect(shouldSetCookie('connect.sid'))
+        .expect(200, 'set', function (err, res) {
+          if (err) return done(err)
+          request(server)
+            .get('/')
+            .set('Cookie', cookie(res))
+            .expect(200, 'get:"bob"', done)
+        })
+    })
+
+    it('should sign and unsign with a Buffer', function (done) {
+      var server = createServer({ secret: crypto.randomBytes(32) }, function (req, res) {
+        if (!req.session.user) {
+          req.session.user = 'bob'
+          res.end('set')
+        } else {
+          res.end('get:' + JSON.stringify(req.session.user))
+        }
+      })
+
+      request(server)
+        .get('/')
+        .expect(shouldSetCookie('connect.sid'))
+        .expect(200, 'set', function (err, res) {
+          if (err) return done(err)
+          request(server)
+            .get('/')
+            .set('Cookie', cookie(res))
+            .expect(200, 'get:"bob"', done)
+        })
+    })
+
     describe('when an array', function () {
       it('should sign cookies', function (done) {
         var server = createServer({ secret: ['keyboard cat', 'nyan cat'] }, function (req, res) {
@@ -1878,18 +1923,43 @@ describe('session()', function(){
         })
 
         it('should override defaults', function(done){
-          var server = createServer({ cookie: { path: '/admin', httpOnly: false, secure: true, maxAge: 5000 } }, function (req, res) {
+          var opts = {
+            httpOnly: false,
+            maxAge: 5000,
+            path: '/admin',
+            priority: 'high',
+            secure: true
+          }
+          var server = createServer({ cookie: opts }, function (req, res) {
             req.session.cookie.secure = false
             res.end()
           })
 
           request(server)
-          .get('/admin')
-          .expect(shouldSetCookieWithAttribute('connect.sid', 'Expires'))
-          .expect(shouldSetCookieWithoutAttribute('connect.sid', 'HttpOnly'))
-          .expect(shouldSetCookieWithAttributeAndValue('connect.sid', 'Path', '/admin'))
-          .expect(shouldSetCookieWithoutAttribute('connect.sid', 'Secure'))
-          .expect(200, done)
+            .get('/admin')
+            .expect(shouldSetCookieWithAttribute('connect.sid', 'Expires'))
+            .expect(shouldSetCookieWithoutAttribute('connect.sid', 'HttpOnly'))
+            .expect(shouldSetCookieWithAttributeAndValue('connect.sid', 'Path', '/admin'))
+            .expect(shouldSetCookieWithoutAttribute('connect.sid', 'Secure'))
+            .expect(shouldSetCookieWithAttributeAndValue('connect.sid', 'Priority', 'High'))
+            .expect(200, done)
+        })
+
+        it('should forward errors setting cookie', function (done) {
+          var cb = after(2, done)
+          var server = createServer({ cookie: { expires: new Date(NaN) } }, function (req, res) {
+            res.end()
+          })
+
+          server.on('error', function onerror (err) {
+            assert.ok(err)
+            assert.strictEqual(err.message, 'option expires is invalid')
+            cb()
+          })
+
+          request(server)
+            .get('/admin')
+            .expect(200, cb)
         })
 
         it('should preserve cookies set before writeHead is called', function(done){
@@ -2160,6 +2230,41 @@ describe('session()', function(){
               .expect(shouldNotHaveHeader('Set-Cookie'))
               .expect(200, done)
             });
+          })
+        })
+      })
+
+      describe('.partitioned', function () {
+        describe('by default', function () {
+          it('should not set partitioned attribute', function (done) {
+            var server = createServer()
+
+            request(server)
+              .get('/')
+              .expect(shouldSetCookieWithoutAttribute('connect.sid', 'Partitioned'))
+              .expect(200, done)
+          })
+        })
+
+        describe('when "false"', function () {
+          it('should not set partitioned attribute', function (done) {
+            var server = createServer({ cookie: { partitioned: false } })
+
+            request(server)
+              .get('/')
+              .expect(shouldSetCookieWithoutAttribute('connect.sid', 'Partitioned'))
+              .expect(200, done)
+          })
+        })
+
+        describe('when "true"', function () {
+          it('should set partitioned attribute', function (done) {
+            var server = createServer({ cookie: { partitioned: true } })
+
+            request(server)
+              .get('/')
+              .expect(shouldSetCookieWithAttribute('connect.sid', 'Partitioned'))
+              .expect(200, done)
           })
         })
       })
